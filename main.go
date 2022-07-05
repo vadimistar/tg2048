@@ -8,15 +8,14 @@ import (
 	"time"
 )
 
-const FIELD_SIZE = 4
-const SQUARES_MAX_COUNT = FIELD_SIZE * FIELD_SIZE
-const START_SQUARE_VAL = 2
+const fieldSize = 4
+const startSquareVal = 2
 
-var field = make([][]int, FIELD_SIZE)
+var field = make([][]int, fieldSize)
 
 func showField() {
-	for i := 0; i < FIELD_SIZE; i++ {
-		for j := 0; j < FIELD_SIZE; j++ {
+	for i := 0; i < fieldSize; i++ {
+		for j := 0; j < fieldSize; j++ {
 			if field[i][j] != 0 {
 				fmt.Printf("|%5d|", field[i][j])
 			} else {
@@ -34,8 +33,8 @@ func (g GameOver) Error() string {
 }
 
 func fieldIsFull() bool {
-	for i := 0; i < FIELD_SIZE; i++ {
-		for j := 0; j < FIELD_SIZE; j++ {
+	for i := 0; i < fieldSize; i++ {
+		for j := 0; j < fieldSize; j++ {
 			if field[i][j] == 0 {
 				return false
 			}
@@ -50,10 +49,10 @@ func checkOverlap(x *int, y *int) error {
 	}
 	for {
 		if field[*x][*y] != 0 {
-			if *x == FIELD_SIZE-1 {
-				*y = (*y + 1) % FIELD_SIZE
+			if *x == fieldSize-1 {
+				*y = (*y + 1) % fieldSize
 			}
-			*x = (*x + 1) % FIELD_SIZE
+			*x = (*x + 1) % fieldSize
 			continue
 		}
 		return nil
@@ -74,12 +73,12 @@ func prepare() error {
 }
 
 func addSquare() (int, int, error) {
-	x := rng.Intn(FIELD_SIZE)
-	y := rng.Intn(FIELD_SIZE)
+	x := rng.Intn(fieldSize)
+	y := rng.Intn(fieldSize)
 	if e := checkOverlap(&x, &y); e != nil {
 		return 0, 0, e
 	}
-	field[x][y] = START_SQUARE_VAL
+	field[x][y] = startSquareVal
 	return x, y, nil
 }
 
@@ -139,7 +138,7 @@ func moveDown(x int, y int) {
 	move(x, y, func(x, y int) (int, int) {
 		return x + 1, y
 	}, func(x, _ int) bool {
-		return x < FIELD_SIZE-1
+		return x < fieldSize-1
 	}, func(x, _ *int) {
 		*x++
 	})
@@ -149,15 +148,15 @@ func moveRight(x int, y int) {
 	move(x, y, func(x, y int) (int, int) {
 		return x, y + 1
 	}, func(_, y int) bool {
-		return y < FIELD_SIZE-1
+		return y < fieldSize-1
 	}, func(_, y *int) {
 		*y++
 	})
 }
 
 func left() {
-	for x := 0; x < FIELD_SIZE; x++ {
-		for y := 0; y < FIELD_SIZE; y++ {
+	for x := 0; x < fieldSize; x++ {
+		for y := 0; y < fieldSize; y++ {
 			if field[x][y] != 0 {
 				moveLeft(x, y)
 			}
@@ -166,8 +165,8 @@ func left() {
 }
 
 func up() {
-	for x := 0; x < FIELD_SIZE; x++ {
-		for y := 0; y < FIELD_SIZE; y++ {
+	for x := 0; x < fieldSize; x++ {
+		for y := 0; y < fieldSize; y++ {
 			if field[x][y] != 0 {
 				moveUp(x, y)
 			}
@@ -176,8 +175,8 @@ func up() {
 }
 
 func down() {
-	for x := FIELD_SIZE - 1; x >= 0; x-- {
-		for y := 0; y < FIELD_SIZE; y++ {
+	for x := fieldSize - 1; x >= 0; x-- {
+		for y := 0; y < fieldSize; y++ {
 			if field[x][y] != 0 {
 				moveDown(x, y)
 			}
@@ -186,8 +185,8 @@ func down() {
 }
 
 func right() {
-	for x := 0; x < FIELD_SIZE; x++ {
-		for y := FIELD_SIZE - 1; y >= 0; y-- {
+	for x := 0; x < fieldSize; x++ {
+		for y := fieldSize - 1; y >= 0; y-- {
 			if field[x][y] != 0 {
 				moveRight(x, y)
 			}
@@ -196,8 +195,8 @@ func right() {
 }
 
 func main() {
-	for i := 0; i < FIELD_SIZE; i++ {
-		field[i] = make([]int, FIELD_SIZE)
+	for i := 0; i < fieldSize; i++ {
+		field[i] = make([]int, fieldSize)
 	}
 	prepare()
 	b := make([]byte, 256)
