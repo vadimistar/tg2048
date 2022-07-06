@@ -12,6 +12,7 @@ const fieldSize = 4
 const startSquareVal = 2
 
 var field = make([][]int, fieldSize)
+var score = 0
 
 func showField() {
 	for i := 0; i < fieldSize; i++ {
@@ -106,6 +107,7 @@ func move(x int, y int, next func(int, int) (int, int), check func(int, int) boo
 			log.Printf("%d %d is moved from %d %d", nx, ny, x, y)
 		} else if field[nx][ny] == field[x][y] {
 			field[nx][ny] += field[x][y]
+			score += field[nx][ny]
 			log.Printf("%d %d combines with %d %d", nx, ny, x, y)
 		} else {
 			break
@@ -201,6 +203,7 @@ func main() {
 	prepare()
 	b := make([]byte, 256)
 	for {
+		fmt.Println("Score: ", score)
 		showField()
 		os.Stdin.Read(b)
 		if handle(b[0]) {
