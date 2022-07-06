@@ -55,32 +55,38 @@ type game struct {
 	score int
 }
 
-func newGame() game {
-	return game{
+func newGame() (game, error) {
+	g := game{
 		field: newField(),
 	}
+	if err := g.prepare(); err != nil {
+		return game{}, err
+	}
+	return g, nil
 }
 
-func (g game) String() string {
-	return fmt.Sprintf("Score: %d\n%s", g.score, g.field)
+func (g game) withBestScore(score int) string {
+	return fmt.Sprintf("Score: %d Best: %d\n%s", g.score, score, g.field)
 }
 
-type gameOver struct{}
+type gameOver struct {
+	score int
+}
 
 func (g gameOver) Error() string {
-	return "Game over"
+	return fmt.Sprintf("Game over. Your score is %d", g.score)
 }
 
-func (f field) checkOverlap(x *int, y *int) error {
-	if f.full() {
-		return gameOver{}
+func (g game) checkOverlap(x *int, y *int) error {
+	if g.field.full() {
+		return gameOver{score: g.score}
 	}
 	for {
-		if f[*x][*y] != 0 {
-			if *x == len(f)-1 {
-				*y = (*y + 1) % len(f)
+		if g.field[*x][*y] != 0 {
+			if *x == fieldSize-1 {
+				*y = (*y + 1) % fieldSize
 			}
-			*x = (*x + 1) % len(f)
+			*x = (*x + 1) % fieldSize
 			continue
 		}
 		return nil
@@ -90,40 +96,24 @@ func (f field) checkOverlap(x *int, y *int) error {
 var rngSrc = rand.NewSource(time.Now().UnixNano())
 var rng = rand.New(rngSrc)
 
-func (f field) prepare() error {
-	if _, _, e := f.addSquare(); e != nil {
+func (g *game) prepare() error {
+	if _, _, e := g.addSquare(); e != nil {
 		return e
 	}
-	if _, _, e := f.addSquare(); e != nil {
+	if _, _, e := g.addSquare(); e != nil {
 		return e
 	}
 	return nil
 }
 
-func (f field) addSquare() (int, int, error) {
+func (g *game) addSquare() (int, int, error) {
 	x := rng.Intn(fieldSize)
 	y := rng.Intn(fieldSize)
-	if e := f.checkOverlap(&x, &y); e != nil {
+	if e := g.checkOverlap(&x, &y); e != nil {
 		return 0, 0, e
 	}
-	f[x][y] = startSquareVal
+	g.field[x][y] = startSquareVal
 	return x, y, nil
-}
-
-func (g *game) handle(b byte) bool {
-	switch b {
-	case 'a':
-		g.left()
-	case 'w':
-		g.up()
-	case 's':
-		g.down()
-	case 'd':
-		g.right()
-	default:
-		return false
-	}
-	return true
 }
 
 func (g *game) move(x int, y int, next func(int, int) (int, int), check func(int, int) bool, incr func(*int, *int)) {
@@ -238,6 +228,72 @@ var gameKeyboard = tgbotapi.NewReplyKeyboard(
 	),
 )
 
+type client struct {
+	game
+	lastMsgId int
+	senderId  int64
+	bestScore int
+	started   bool
+}
+
+var clients = make([]client, 0)
+
+func clientWithId(id int64) *client {
+	for i := range clients {
+		if clients[i].senderId == id {
+			return &clients[i]
+		}
+	}
+	return nil
+}
+
+func newClient(senderId int64) (client, error) {
+	g, err := newGame()
+	if err != nil {
+		return client{}, err
+	}
+	return client{
+		game:     g,
+		senderId: senderId,
+		started:  false,
+	}, nil
+}
+
+func (c *client) restart() error {
+	score := c.game.score
+	if score > c.bestScore {
+		c.bestScore = score
+	}
+	game, err := newGame()
+	if err != nil {
+		return err
+	}
+	c.game = game
+	c.lastMsgId = 0
+	c.started = false
+	return nil
+}
+
+func sendField(c *client, b *tgbotapi.BotAPI, u *tgbotapi.Update) {
+	msg := tgbotapi.NewMessage(u.Message.Chat.ID, c.game.withBestScore(c.bestScore))
+	msg.ParseMode = "Markdown"
+	sent, err := b.Send(msg)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	c.lastMsgId = sent.MessageID
+}
+
+func removeClient(c *client) {
+	index := 0
+	for i := range clients {
+		if &clients[i] == c {
+			index = i
+		}
+	}
+	clients = append(clients[:index], clients[index+1:]...)
+}
+
 func main() {
 	log.Println("Token is", os.Getenv("TELEGRAM_API_TOKEN"))
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_API_TOKEN"))
@@ -248,85 +304,74 @@ func main() {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = updateConfigTimeout
 	updates := bot.GetUpdatesChan(updateConfig)
-	game := newGame()
-	if err := game.prepare(); err != nil {
-		log.Fatalln(err)
-	}
-	lastMsgId := 0
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
-		if lastMsgId == 0 {
+		client := clientWithId(update.Message.From.ID)
+		if client == nil {
+			newClient, err := newClient(update.Message.From.ID)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			clients = append(clients, newClient)
+			client = &clients[len(clients)-1]
+		}
+		log.Printf("Current client: %v", client)
+		if !client.started {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, `**tg2048**
 2048 Clone Telegram Bot
-by [vadimistar](https://github.com/vadimistar) *(Vadim Starostin)*`)
+by [vadimistar](https://github.com/vadimistar) *(Vadim Starostin)*
+
+Press any button to start
+
+/stop - stop the game and reset the best score
+/restart - restart the current game`)
 			msg.ParseMode = "Markdown"
 			msg.ReplyMarkup = gameKeyboard
 			if _, err := bot.Send(msg); err != nil {
 				log.Fatalln(err)
 			}
-		} else {
+			sendField(client, bot, &update)
+			client.started = true
+			continue
+		}
+		if client.lastMsgId != 0 {
 			bot.Send(tgbotapi.NewDeleteMessage(update.Message.Chat.ID,
-				lastMsgId))
+				client.lastMsgId))
+		}
+		if update.Message.IsCommand() {
+			switch update.Message.Command() {
+			case "stop":
+				removeClient(client)
+			case "restart":
+				if err := client.restart(); err != nil {
+					log.Fatalln(err)
+				}
+			}
 		}
 		input := update.Message.Text
 		d := tgbotapi.NewDeleteMessage(update.Message.Chat.ID, update.Message.MessageID)
 		bot.Send(d)
 		switch input {
 		case "⬅️️":
-			game.left()
+			client.game.left()
 		case "️⬆️":
-			game.up()
+			client.game.up()
 		case "️➡️️️":
-			game.right()
+			client.game.right()
 		case "⬇️":
-			game.down()
+			client.game.down()
 		default:
 			continue
 		}
-		x, y, err := game.addSquare()
+		x, y, err := client.game.addSquare()
 		if err != nil {
-			log.Fatalln(err)
+			bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, err.Error()))
+			client.restart()
+			continue
 		}
 		log.Printf("square at %d %d was generated", x, y)
-		fieldMsg := tgbotapi.NewMessage(update.Message.Chat.ID, game.String())
-		fieldMsg.ParseMode = "Markdown"
-		sentFieldMsg, err := bot.Send(fieldMsg)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		lastMsgId = sentFieldMsg.MessageID
-		//switch update.Message.Command() {
-		// case "start":
-		// 	msg.ReplyMarkup = gameKeyboard
-		// default:
-		// 	msg.Text = update.Message.Command()
-		// }
-		// if _, err := bot.Send(msg); err != nil {
-		// 	log.Fatalln(err)
-		// }
-		// if game.handle(update.Message.Text[0]) {
-		// 	msg := tgbotapi.NewMessage()
-		// }
-		// msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		// msg.ReplyToMessageID = update.Message.MessageID
-		// if _, err := bot.Send(msg); err != nil {
-		// 	log.Fatalln(err)
-		// }
+		sendField(client, bot, &update)
 	}
-	// b := make([]byte, 256)
-	// for {
-	// 	fmt.Println("Score: ", score)
-	// 	showField()
-	// 	os.Stdin.Read(b)
-	// 	if handle(b[0]) {
-	// 		log.Println(string(b[0]), "was handled")
-	// 		x, y, err := addSquare()
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
-	// 		log.Printf("square at %d %d was generated", x, y)
-	// 	}
-	// }
 }
